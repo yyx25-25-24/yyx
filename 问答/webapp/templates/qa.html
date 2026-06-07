@@ -1,0 +1,25 @@
+{% extends "layout.html" %}
+{% block content %}
+  <h3>文档问答</h3>
+  <form method="post">
+    <div class="mb-3">
+      <label>选择文档</label>
+      <select name="file" class="form-select">
+        <option value="">-- 选择 --</option>
+        {% for f in uploads %}
+          <option value="{{ f }}" {% if selected==f %}selected{% endif %}>{{ f }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="mb-3">
+      <textarea name="question" class="form-control" rows="3" placeholder="在此输入你的问题"></textarea>
+    </div>
+    <button class="btn btn-primary" type="submit">提问</button>
+  </form>
+
+  {% if answer %}
+    <hr>
+    <h4>回答</h4>
+    <pre>{{ answer }}</pre>
+  {% endif %}
+{% endblock %}

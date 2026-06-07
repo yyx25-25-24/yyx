@@ -1,6 +1,7 @@
 import os
 import datetime
 from pathlib import Path
+import json
 
 
 def save_markdown_report(query: str, response: str, dataset_key: str, save_dir: str, charts: list[str] | None = None) -> str:
@@ -88,6 +89,68 @@ def save_docx_report(query: str, response: str, dataset_key: str, save_dir: str)
     return save_path
 
 
+def save_html_report(query: str, response: str, dataset_key: str, save_dir: str, charts: list[str] | None = None) -> str:
+    os.makedirs(save_dir, exist_ok=True)
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"report_{dataset_key}_{timestamp}.html"
+    filename = filename.replace(" ", "_").replace("/", "_")
+    save_path = os.path.join(save_dir, filename)
+
+    html_lines = []
+    html_lines.append('<!doctype html>')
+    html_lines.append('<html><head><meta charset="utf-8"><title>分析报告</title></head><body>')
+    html_lines.append(f'<h1>分析报告</h1>')
+    html_lines.append(f'<p><strong>数据集：</strong>{dataset_key}</p>')
+    html_lines.append(f'<p><strong>生成时间：</strong>{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>')
+    html_lines.append(f'<p><strong>查询内容：</strong>{query}</p>')
+    html_lines.append('<hr>')
+    html_lines.append('<h2>分析结果</h2>')
+
+    # format response
+    if isinstance(response, dict):
+        html_lines.append('<div>')
+        for k, v in response.items():
+            html_lines.append(f'<h3>{k}</h3>')
+            html_lines.append(f'<pre>{json.dumps(v, ensure_ascii=False, indent=2)}</pre>')
+        html_lines.append('</div>')
+    else:
+        html_lines.append(f'<pre>{response}</pre>')
+
+    if charts:
+        html_lines.append('<h2>图表</h2>')
+        for c in charts:
+            # if looks like URL or absolute path starting with / serve as is
+            if isinstance(c, str) and (c.startswith('http') or c.startswith('/')):
+                src = c
+            else:
+                # assume filesystem path, use basename so served by /charts/ route
+                src = os.path.basename(c)
+                src = f'/charts/{src}'
+            html_lines.append(f'<div><img src="{src}" style="max-width:100%;height:auto;"></div>')
+
+    html_lines.append('</body></html>')
+
+    with open(save_path, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(html_lines))
+
+    return save_path
+
+
+def save_pdf_report(query: str, response: str, dataset_key: str, save_dir: str, charts: list[str] | None = None) -> str:
+    # generate intermediate html then convert via pdfkit if available
+    html_path = save_html_report(query, response, dataset_key, save_dir, charts=charts)
+    pdf_path = os.path.splitext(html_path)[0] + '.pdf'
+    try:
+        import pdfkit
+    except Exception as exc:
+        raise RuntimeError('要生成 PDF，请先安装 pdfkit 并配置 wkhtmltopdf。') from exc
+    try:
+        pdfkit.from_file(html_path, pdf_path)
+    except Exception as exc:
+        raise RuntimeError(f'PDF 生成失败: {exc}') from exc
+    return pdf_path
+
+
 def save_analysis_report(query: str, response: str, dataset_key: str, save_dir: str, report_format: str) -> str:
     if report_format.lower() == "md":
         # backward-compatible: accept optional charts passed via tuple
@@ -98,4 +161,16 @@ def save_analysis_report(query: str, response: str, dataset_key: str, save_dir: 
         return save_markdown_report(query, response, dataset_key, save_dir)
     if report_format.lower() == "docx":
         return save_docx_report(query, response, dataset_key, save_dir)
+    if report_format.lower() == "html":
+        charts = None
+        if isinstance(response, tuple) and len(response) == 2:
+            resp_text, charts = response
+            return save_html_report(query, resp_text, dataset_key, save_dir, charts=charts)
+        return save_html_report(query, response, dataset_key, save_dir)
+    if report_format.lower() == "pdf":
+        charts = None
+        if isinstance(response, tuple) and len(response) == 2:
+            resp_text, charts = response
+            return save_pdf_report(query, resp_text, dataset_key, save_dir, charts=charts)
+        return save_pdf_report(query, response, dataset_key, save_dir)
     raise ValueError(f"不支持的报告格式: {report_format}")

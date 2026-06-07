@@ -8,3 +8,5 @@ python-dotenv
 openpyxl
 python-docx
 kaleido
+Flask
+pytest

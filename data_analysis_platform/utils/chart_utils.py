@@ -29,7 +29,7 @@ def _get_categorical_columns(df):
     return [c for c in df.columns if df[c].dtype.kind not in "fi"]
 
 
-def generate_default_chart(df, chart_type: str, save_dir: str, chart_format: str, title: str = None, x_col: str = None, y_col: str = None) -> str:
+def generate_default_chart(df, chart_type: str, save_dir: str, chart_format: str, title: str = None, x_col: str = None, y_col: str = None, color_scheme=None, width: int = 800, height: int = 600, scale: int = 1) -> str:
     os.makedirs(save_dir, exist_ok=True)
     numeric_cols = _get_numeric_columns(df)
     if not numeric_cols:
@@ -74,25 +74,41 @@ def generate_default_chart(df, chart_type: str, save_dir: str, chart_format: str
                 x_col = df.columns[0]
             y_col = numeric_cols[0]
 
+    # prepare color scheme if provided
+    seq = None
+    if color_scheme:
+        try:
+            from plotly import colors as plc
+            if isinstance(color_scheme, (list, tuple)):
+                seq = list(color_scheme)
+            else:
+                seq = plc.sequential.__dict__.get(color_scheme) or plc.qualitative.__dict__.get(color_scheme) or plc.diverging.__dict__.get(color_scheme)
+        except Exception:
+            seq = None
+
     # build figure if not already created by heatmap
     if 'fig' not in locals():
+        px_kwargs = {}
+        if seq:
+            px_kwargs['color_discrete_sequence'] = seq
+
         if chart_type == "scatter":
-            fig = px.scatter(df, x=x_col, y=y_col, title=title)
+            fig = px.scatter(df, x=x_col, y=y_col, title=title, **px_kwargs)
         elif chart_type == "bar":
-            fig = px.bar(df, x=x_col, y=y_col, title=title)
+            fig = px.bar(df, x=x_col, y=y_col, title=title, **px_kwargs)
         elif chart_type == "stacked_bar":
             # attempt stacked bar by second numeric as stack if available
             if len(numeric_cols) >= 2 and x_col is not None:
-                fig = px.bar(df, x=x_col, y=[y_col, numeric_cols[1]], title=title)
+                fig = px.bar(df, x=x_col, y=[y_col, numeric_cols[1]], title=title, **px_kwargs)
             else:
-                fig = px.bar(df, x=x_col, y=y_col, title=title)
+                fig = px.bar(df, x=x_col, y=y_col, title=title, **px_kwargs)
         elif chart_type == "box":
             if x_col:
-                fig = px.box(df, x=x_col, y=y_col, title=title)
+                fig = px.box(df, x=x_col, y=y_col, title=title, **px_kwargs)
             else:
-                fig = px.box(df, y=y_col, title=title)
+                fig = px.box(df, y=y_col, title=title, **px_kwargs)
         else:
-            fig = px.line(df, x=x_col, y=y_col, title=title)
+            fig = px.line(df, x=x_col, y=y_col, title=title, **px_kwargs)
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"chart_{chart_type}_{timestamp}.{chart_format}"
@@ -102,7 +118,8 @@ def generate_default_chart(df, chart_type: str, save_dir: str, chart_format: str
         pio.write_html(fig, save_path, auto_open=False)
     else:
         try:
-            pio.write_image(fig, save_path)
+            # use write_image with specified size and scale
+            pio.write_image(fig, save_path, format=chart_format, width=width, height=height, scale=scale)
         except Exception as exc:
             raise RuntimeError(
                 f"无法导出为 {chart_format}，请确认已安装 kaleido 或使用 html 格式。详细错误: {exc}"

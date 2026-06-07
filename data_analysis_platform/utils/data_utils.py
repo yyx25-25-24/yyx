@@ -40,7 +40,13 @@ def detect_time_columns(df: pd.DataFrame) -> List[str]:
     candidates = []
     for c in df.columns:
         try:
-            ser = pd.to_datetime(df[c], errors="coerce")
+            if df[c].dtype.kind in "fi":
+                continue
+            ser_str = df[c].astype(str).str.strip()
+            numeric_like = ser_str.str.match(r'^-?\d+(\.\d+)?$')
+            if numeric_like.sum() / max(1, len(df)) > 0.8:
+                continue
+            ser = pd.to_datetime(df[c], errors="coerce", infer_datetime_format=True)
             nonnull = ser.notna().sum()
             if nonnull > 0 and nonnull / len(df) > 0.5:
                 candidates.append(c)
@@ -55,7 +61,7 @@ def preprocess_df(df: pd.DataFrame, parse_dates: bool = True, fill_method: str =
         time_cols = detect_time_columns(df)
         for c in time_cols:
             try:
-                df[c] = pd.to_datetime(df[c], errors="coerce")
+                df[c] = pd.to_datetime(df[c], errors="coerce", infer_datetime_format=True)
             except Exception:
                 pass
 

@@ -1,0 +1,6 @@
+{% extends "layout.html" %}
+{% block content %}
+  <h3>预览: {{ filename }}</h3>
+  <pre style="white-space: pre-wrap;">{{ content }}</pre>
+  <a class="btn btn-secondary mt-3" href="/files">返回</a>
+{% endblock %}

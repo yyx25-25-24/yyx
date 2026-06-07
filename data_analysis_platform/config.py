@@ -40,6 +40,9 @@ LOG_SAVE_PATH = os.path.join(PROJECT_ROOT, "logs")
 
 # 持久化会话/历史（简单 JSON 存储）
 SESSION_STORE = os.path.join(PROJECT_ROOT, "session_history.json")
+# 简单的 Web 登录凭证（可选，留空则不启用登录）
+WEB_USERNAME = os.getenv("WEB_USERNAME", "")
+WEB_PASSWORD = os.getenv("WEB_PASSWORD", "")
 # 请求限流与成本日志
 RATE_LIMIT_PER_SECOND = float(os.getenv("RATE_LIMIT_PER_SECOND", "5.0"))
 COST_LOG_PATH = os.path.join(PROJECT_ROOT, "llm_costs.log")

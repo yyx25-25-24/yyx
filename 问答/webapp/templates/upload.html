@@ -1,0 +1,20 @@
+{% extends "layout.html" %}
+{% block content %}
+  <h3>上传文件</h3>
+  <form method="post" enctype="multipart/form-data">
+    <div class="mb-3">
+      <input class="form-control" type="file" name="file">
+    </div>
+    <button class="btn btn-primary" type="submit">上传</button>
+  </form>
+
+  <hr>
+  <h4>已上传</h4>
+  <ul>
+    {% for f in uploads %}
+      <li><a href="/uploads/{{ f }}">{{ f }}</a></li>
+    {% else %}
+      <li>暂无文件</li>
+    {% endfor %}
+  </ul>
+{% endblock %}

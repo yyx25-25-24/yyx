@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import config
-from models.kinematics import calculate_uav_position, calculate_smoke_position
+from models.kinematics import calculate_uav_position, calculate_smoke_position, calculate_missile_position
 from models.occlusion import generate_target_samples
 
 # 设置中文字体

@@ -58,3 +58,25 @@ python main.py
 - 请将真实的 Excel 数据文件放入 `data/` 文件夹，或直接在 `config.py` 中修改 `DATA_FILES`
 - 当前平台默认支持通义千问模型。若未配置 API Key，平台会自动回退到本地数据分析模式。
 - 如果要替换为其他模型，请修改 `config.py` 中的 `MODEL_NAME` 和 `DASHSCOPE_API_KEY`。
+
+## Web 原型（上传与导出报告）
+
+本仓库包含一个轻量的 Flask 原型，用于通过网页上传数据、选择分析与图表参数，并导出包含图表的 HTML 报告。
+
+- 启动命令：
+```
+python -m data_analysis_platform.webapp.app
+```
+- 配置：可以在 `.env` 中设置 `WEB_USERNAME` 和 `WEB_PASSWORD` 启用简单登录（留空则禁用）。
+- 输出：生成的图表保存在 `charts/`，报告保存在 `reports/`（HTML，可选 PDF 需安装 `pdfkit` + `wkhtmltopdf`）。
+- 会话历史：访问 `/history` 可以查看最近的分析请求、数据集和结果摘要。
+
+前端在选择文件后会自动解析列并填充横轴/纵轴下拉，分析完成后会生成可在页面查看与下载的报告与图片。
+
+## 测试
+
+使用 `pytest` 运行 Web 原型的基本端到端测试：
+
+```bash
+pytest data_analysis_platform/tests/test_webapp_end2end.py data_analysis_platform/tests/test_webapp_history.py
+```
