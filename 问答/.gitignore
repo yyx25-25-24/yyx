@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+
+# 敏感信息
+.env
+*.log
+evaluation_results.txt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 上传的文件
+webapp/uploads/*
+!webapp/uploads/.gitkeep
+
+# 测试和临时文件
+*.pyc
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# 数据库
+*.db
+*.sqlite3

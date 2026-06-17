@@ -1,25 +1,232 @@
-{% extends "layout.html" %}
-{% block content %}
-  <h3>文档问答</h3>
-  <form method="post">
-    <div class="mb-3">
-      <label>选择文档</label>
-      <select name="file" class="form-select">
-        <option value="">-- 选择 --</option>
-        {% for f in uploads %}
-          <option value="{{ f }}" {% if selected==f %}selected{% endif %}>{{ f }}</option>
-        {% endfor %}
-      </select>
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>文献问答系统</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 40px auto;
+            padding: 20px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+        }
+        .card {
+            border: none;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .btn-primary {
+            background-color: #007bff;
+            border-color: #007bff;
+            border-radius: 5px;
+            padding: 10px 20px;
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+        .btn-primary:hover {
+            background-color: #0056b3;
+            transform: translateY(-2px);
+        }
+        .form-control {
+            border-radius: 5px;
+            border: 1px solid #ddd;
+            padding: 12px;
+            font-size: 16px;
+        }
+        .form-control:focus {
+            border-color: #007bff;
+            box-shadow: 0 0 0 3px rgba(0,123,255,0.2);
+        }
+        .dropdown-menu {
+            min-width: 300px;
+        }
+        .alert {
+            margin-top: 20px;
+            border-radius: 5px;
+        }
+        .loading-animation {
+            display: none;
+            text-align: center;
+            padding: 20px;
+            color: #6c757d;
+        }
+        .spinner-border {
+            width: 2rem;
+            height: 2rem;
+            border-width: 0.25em;
+        }
+        .answer-container {
+            margin-top: 20px;
+            padding: 20px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #007bff;
+        }
+        .document-selection {
+            margin-bottom: 20px;
+        }
+        .file-item {
+            display: inline-block;
+            margin-right: 10px;
+            margin-bottom: 10px;
+            padding: 8px 12px;
+            background-color: #e9ecef;
+            border-radius: 5px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .file-item:hover {
+            background-color: #dee2e6;
+        }
+        .file-item.active {
+            background-color: #007bff;
+            color: white;
+        }
+        .file-item.remove {
+            background-color: #dc3545;
+            color: white;
+        }
+        .file-item.remove:hover {
+            background-color: #c82333;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="text-center mb-4">文献问答原型</h1>
+        
+        <div class="row">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">文档问答</h5>
+                        
+                        <!-- 文档选择 -->
+                        <div class="document-selection">
+                            <label for="document-select" class="form-label">选择文档</label>
+                            <select id="document-select" class="form-select">
+                                {% for file in uploads %}
+                                    <option value="{{ file }}">{{ file }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        
+                        <!-- 问题输入 -->
+                        <div class="mb-3">
+                            <label for="question-input" class="form-label">在此输入你的问题</label>
+                            <textarea 
+                                id="question-input" 
+                                class="form-control" 
+                                rows="4" 
+                                placeholder="请输入您的问题..."
+                                required
+                            ></textarea>
+                        </div>
+                        
+                        <!-- 提交按钮 -->
+                        <button 
+                            id="submit-btn" 
+                            class="btn btn-primary"
+                            onclick="submitQuestion()"
+                        >
+                            提问
+                        </button>
+                        
+                        <!-- 加载动画 -->
+                        <div id="loading-animation" class="loading-animation">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">正在思考中...</span>
+                            </div>
+                            <p class="mt-2">正在分析文档并生成回答...</p>
+                        </div>
+                        
+                        <!-- 回答显示 -->
+                        <div id="answer-container" class="answer-container" style="display: none;">
+                            <h6>回答</h6>
+                            <div id="answer-content"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
-    <div class="mb-3">
-      <textarea name="question" class="form-control" rows="3" placeholder="在此输入你的问题"></textarea>
-    </div>
-    <button class="btn btn-primary" type="submit">提问</button>
-  </form>
 
-  {% if answer %}
-    <hr>
-    <h4>回答</h4>
-    <pre>{{ answer }}</pre>
-  {% endif %}
-{% endblock %}
+    <script>
+        // 提交问题
+        function submitQuestion() {
+            const questionInput = document.getElementById('question-input');
+            const answerContainer = document.getElementById('answer-container');
+            const loadingAnimation = document.getElementById('loading-animation');
+            const submitBtn = document.getElementById('submit-btn');
+            
+            // 验证输入
+            if (!questionInput.value.trim()) {
+                alert('请输入问题！');
+                return;
+            }
+            
+            // 获取选中的文件（现在是单选）
+            const select = document.getElementById('document-select');
+            const selectedFile = select.value;
+            
+            if (!selectedFile) {
+                alert('请选择一个文档！');
+                return;
+            }
+            
+            // 显示加载动画
+            loadingAnimation.style.display = 'block';
+            submitBtn.disabled = true;
+            submitBtn.textContent = '处理中...';
+            
+            // 发送真实请求到服务器
+            fetch('/qa', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: new URLSearchParams({
+                    'files': selectedFile,  // 这里只传一个文件名
+                    'question': questionInput.value
+                })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.json();
+            })
+            .then(data => {
+                // 更新界面
+                document.getElementById('answer-content').innerHTML = data.answer || '<p>未收到回答</p>';
+                answerContainer.style.display = 'block';
+                loadingAnimation.style.display = 'none';
+                submitBtn.disabled = false;
+                submitBtn.textContent = '提问';
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('请求失败，请重试');
+                loadingAnimation.style.display = 'none';
+                submitBtn.disabled = false;
+                submitBtn.textContent = '提问';
+            });
+        }
+
+        // 页面加载完成后初始化
+        window.addEventListener('DOMContentLoaded', function() {
+            // 不需要再初始化多选逻辑了
+        });
+    </script>
+</body>
+</html>
