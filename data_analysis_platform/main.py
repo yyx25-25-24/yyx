@@ -7,9 +7,19 @@ from utils.chart_utils import detect_chart_type, generate_default_chart
 from utils.report_utils import save_analysis_report
 from utils.data_utils import preprocess_df, choose_chart_columns
 from utils.llm_utils import LLMClient
-
+from utils.tool_registry import registry, ToolRegistry
+from utils.retry_engine import RetryEngine, RetryConfig
+from utils.result_validator import validator, ValidationResult
 all_data = {}
 current_df = None
+
+retry_engine = RetryEngine(
+    default_config=RetryConfig(
+        max_retries=config.REQUEST_RETRIES,
+        base_delay=config.REQUEST_BACKOFF,
+        backoff_factor=2.0
+    )
+)
 
 
 def init_platform():
@@ -37,7 +47,6 @@ def init_platform():
             print(f"⚠️  警告：文件 {file_path} 不存在，跳过")
             continue
         
-        # 自动尝试两种引擎读取Excel文件
         excel_file = None
         for engine in ['openpyxl', 'xlrd']:
             try:
@@ -55,7 +64,6 @@ def init_platform():
         for sheet_name in excel_file.sheet_names:
             try:
                 df = excel_file.parse(sheet_name)
-                # 跳过空sheet
                 if df.empty:
                     print(f"⚠️  跳过空sheet：{os.path.basename(file_path)}_{sheet_name}")
                     continue
@@ -76,10 +84,8 @@ def init_platform():
     
     global current_df
     current_df = list(all_data.values())[0]
-    # 预处理默认数据集（解析时间、填充缺失值）
     try:
         current_df = preprocess_df(current_df, parse_dates=True, fill_method="ffill")
-        # 保存回全局存储，方便后续切换和展示
         all_data[list(all_data.keys())[0]] = current_df
     except Exception:
         pass
@@ -90,18 +96,79 @@ def init_platform():
     print("=" * 70)
 
 
-def create_analysis_agent(df):
-    """尝试创建大模型分析 Agent，如果不可用则返回 None"""
-    # 首先尝试创建 langchain/Tongyi Agent（如果可用）
+@registry.register(
+    name="dataframe_analysis",
+    description="基于当前数据集执行本地数据分析",
+    category="analysis",
+    requires_df=True,
+    tags=["analysis", "local"]
+)
+def dataframe_analysis_tool(query: str, df: pd.DataFrame) -> str:
+    """本地数据分析引擎"""
+    return local_analysis_engine(query, df)
 
+
+@registry.register(
+    name="chart_generation",
+    description="生成数据可视化图表",
+    category="visualization",
+    requires_df=True,
+    tags=["chart", "visualization"]
+)
+def chart_generation_tool(df: pd.DataFrame, chart_type: str, title: str = None) -> str:
+    """图表生成工具"""
+    try:
+        chart_path = generate_default_chart(
+            df, 
+            chart_type, 
+            config.CHART_SAVE_PATH, 
+            config.CHART_FORMAT,
+            title=title or f"自动生成图表 - {chart_type}"
+        )
+        return f"✅ 图表已保存：{chart_path}"
+    except Exception as e:
+        return f"❌ 图表生成失败：{str(e)}"
+
+
+@registry.register(
+    name="report_export",
+    description="导出分析报告",
+    category="export",
+    requires_df=False,
+    tags=["report", "export"]
+)
+def report_export_tool(query: str, result: str, dataset_key: str) -> str:
+    """报告导出工具"""
+    try:
+        report_path = save_analysis_report(
+            query, 
+            result, 
+            dataset_key, 
+            config.REPORT_SAVE_PATH, 
+            config.REPORT_FORMAT
+        )
+        return f"✅ 报告已保存：{report_path}"
+    except Exception as e:
+        return f"❌ 报告导出失败：{str(e)}"
+
+
+def create_analysis_agent(df):
+    """创建大模型分析 Agent，集成工具注册中心"""
     try:
         from langchain import agents
         from langchain.tools import tool
         from langchain_community.llms import Tongyi
     except Exception as exc:
-        # 如果 langchain/Tongyi 不可用，尝试使用通用 LLMClient（OpenAI 或本地回退）
         try:
-            client = LLMClient(backend=config.LLM_BACKEND, openai_api_key=config.OPENAI_API_KEY, dashscope_key=config.DASHSCOPE_API_KEY, model_name=config.MODEL_NAME, temperature=config.TEMPERATURE, retries=config.REQUEST_RETRIES, backoff=config.REQUEST_BACKOFF)
+            client = LLMClient(
+                backend=config.LLM_BACKEND, 
+                openai_api_key=config.OPENAI_API_KEY, 
+                dashscope_key=config.DASHSCOPE_API_KEY, 
+                model_name=config.MODEL_NAME, 
+                temperature=config.TEMPERATURE, 
+                retries=config.REQUEST_RETRIES, 
+                backoff=config.REQUEST_BACKOFF
+            )
             class SimpleAgent:
                 def __init__(self, client):
                     self.client = client
@@ -119,9 +186,16 @@ def create_analysis_agent(df):
             api_key=config.DASHSCOPE_API_KEY
         )
     except Exception as exc:
-        # 如果 Tongyi 初始化失败，尝试通用 LLMClient 作为备选
         try:
-            client = LLMClient(backend=config.LLM_BACKEND, openai_api_key=config.OPENAI_API_KEY, dashscope_key=config.DASHSCOPE_API_KEY, model_name=config.MODEL_NAME, temperature=config.TEMPERATURE, retries=config.REQUEST_RETRIES, backoff=config.REQUEST_BACKOFF)
+            client = LLMClient(
+                backend=config.LLM_BACKEND, 
+                openai_api_key=config.OPENAI_API_KEY, 
+                dashscope_key=config.DASHSCOPE_API_KEY, 
+                model_name=config.MODEL_NAME, 
+                temperature=config.TEMPERATURE, 
+                retries=config.REQUEST_RETRIES, 
+                backoff=config.REQUEST_BACKOFF
+            )
             class SimpleAgent:
                 def __init__(self, client):
                     self.client = client
@@ -132,12 +206,35 @@ def create_analysis_agent(df):
             print("⚠️ Tongyi 初始化失败，将启用本地分析模式。详细原因：", exc)
             return None
 
-    def dataframe_analysis_tool(query: str) -> str:
-        """基于当前数据集执行本地数据分析。"""
-        return local_analysis_engine(query, df)
+    def wrapped_analysis_tool(query: str) -> str:
+        """包装后的分析工具，集成重试和校验"""
+        def execute_analysis():
+            result = dataframe_analysis_tool(query, df)
+            
+            validation = validator.validate(result, "text")
+            if not validation.is_valid:
+                raise ValueError(f"结果校验失败: {'; '.join(validation.errors)}")
+            
+            if validation.warnings:
+                print(f"⚠️ 结果警告: {'; '.join(validation.warnings)}")
+            
+            return validation.sanitized_output
+        
+        try:
+            return retry_engine.execute_with_retry(
+                execute_analysis,
+                config=RetryConfig(
+                    max_retries=2,
+                    base_delay=1.0,
+                    retryable_exceptions=(ValueError, RuntimeError)
+                )
+            )
+        except Exception as e:
+            print(f"⚠️ 分析执行失败，返回降级结果: {e}")
+            return f"分析执行失败: {str(e)}"
 
     try:
-        tool_instance = tool(dataframe_analysis_tool)
+        tool_instance = tool(wrapped_analysis_tool)
         agent = agents.create_agent(
             model=llm,
             tools=[tool_instance],
@@ -182,9 +279,9 @@ def summarize_columns(df: pd.DataFrame) -> str:
 def summarize_overall(df: pd.DataFrame, numeric_cols: list[str]) -> str:
     desc = df[numeric_cols].describe().round(3).to_string()
     return (
-        "当前数据集数值列摘要统计如下：\n" +
+        '当前数据集数值列摘要统计如下：\n' +
         desc +
-        "\n\n提示：你可以输入“趋势”“排名”“相关性”等关键词，让平台生成更具体的分析结果。"
+        '\n\n提示：你可以输入"趋势""排名""相关性"等关键词，让平台生成更具体的分析结果。'
     )
 
 
@@ -260,9 +357,24 @@ def show_help():
     print("\n2. 切换数据集：输入 switch 数据集名称，例如：")
     print(f"   - switch {list(all_data.keys())[1] if len(all_data) > 1 else '数据集名称'}")
     print(f"📋 可用数据集：{list(all_data.keys())}")
-    print("\n3. 其他命令：")
+    print("\n3. 查看已注册工具：输入 tools")
+    print("\n4. 其他命令：")
     print("   - help：显示帮助信息")
     print("   - exit/退出/q：退出程序")
+    print("=" * 70 + "\n")
+
+
+def show_registered_tools():
+    """显示已注册的工具列表"""
+    print("\n" + "=" * 70)
+    print("🔧 已注册的工具")
+    print("=" * 70)
+    tools = registry.list_tools()
+    for tool in tools:
+        print(f"📦 [{tool.category}] {tool.name}")
+        print(f"   描述: {tool.description}")
+        print(f"   标签: {', '.join(tool.tags)}")
+        print()
     print("=" * 70 + "\n")
 
 
@@ -280,6 +392,9 @@ def main():
             break
         if user_input.lower() == "help":
             show_help()
+            continue
+        if user_input.lower() == "tools":
+            show_registered_tools()
             continue
         if user_input.lower() == "batch":
             print("\n🔁 开始批处理：对所有数据集运行预设分析并导出报告与图表...")
@@ -328,6 +443,11 @@ def main():
             else:
                 result = local_analysis_engine(user_input, current_df)
 
+            validation = validator.validate(result, "text")
+            if not validation.is_valid:
+                print(f"⚠️ 结果校验警告: {'; '.join(validation.errors)}")
+                result = validation.sanitized_output or result
+            
             print("\n" + "-" * 70)
             print("📊 分析结果")
             print("-" * 70)
@@ -351,7 +471,6 @@ def main():
             except Exception as chart_error:
                 print(f"⚠️ 未生成图表：{chart_error}")
 
-            # 将图表嵌入报告（如果存在）并重新保存报告以包含图表
             charts = [chart_path] if 'chart_path' in locals() else None
             try:
                 if charts:
@@ -359,7 +478,6 @@ def main():
             except Exception:
                 pass
 
-            # 持久化会话历史
             try:
                 session_store.append_session({
                     "dataset": dataset_key,
@@ -404,7 +522,6 @@ def run_batch(agent):
     ]
     for dataset_key, df in list(all_data.items()):
         print(f"\n➡️ 批处理数据集：{dataset_key}")
-        # ensure preprocessed
         try:
             df_proc = preprocess_df(df, parse_dates=True, fill_method="ffill")
             all_data[dataset_key] = df_proc
@@ -422,8 +539,6 @@ def run_batch(agent):
             else:
                 resp = local_analysis_engine(q, df_proc)
 
-            # 保存报告
-            # 先生成图表，再保存报告以便内嵌
             chart_paths = []
             chart_type = detect_chart_type(q)
             try:
@@ -436,7 +551,6 @@ def run_batch(agent):
             report_path = save_analysis_report(q, (resp, chart_paths) if chart_paths else resp, dataset_key, config.REPORT_SAVE_PATH, config.REPORT_FORMAT)
             print(f"    ✅ 报告: {report_path}")
 
-            # 记录会话
             try:
                 session_store.append_session({
                     "dataset": dataset_key,
@@ -447,11 +561,9 @@ def run_batch(agent):
             except Exception:
                 pass
 
-            # 生成图表（尝试自动选择列）
             chart_type = detect_chart_type(q)
             try:
                 x_col, y_col = choose_chart_columns(df_proc, q)
-                # use generate_default_chart which will handle index/time
                 chart_path = generate_default_chart(df_proc, chart_type, config.CHART_SAVE_PATH, config.CHART_FORMAT, title=f"{dataset_key} - {q}")
                 print(f"    ✅ 图表: {chart_path}")
             except Exception as chart_err:
