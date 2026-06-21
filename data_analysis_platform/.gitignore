@@ -1,0 +1,7 @@
+# 运行生成的产物
+charts/
+reports/
+
+# Python 缓存
+__pycache__/
+*.pyc
