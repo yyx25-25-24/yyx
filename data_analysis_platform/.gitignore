@@ -11,3 +11,4 @@ __pycache__/
 *.log
 session_history.json
 llm_costs.log
+data/
