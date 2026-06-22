@@ -5,3 +5,9 @@ reports/
 # Python 缓存
 __pycache__/
 *.pyc
+
+# 敏感文件
+.env
+*.log
+session_history.json
+llm_costs.log
